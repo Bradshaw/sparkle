@@ -1,0 +1,24 @@
+[package]
+name = "sparkle"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rayon = "1.7.0"
+ggez = "0.9.0-rc0"
+rand = "0.8.5"
+kd-tree = { version = "0.5.3", features = ["rayon"] }
+typenum = "1.16.0"
+palette = "0.6.1"
+statistical = "1.0.0"
+ndarray = "0.15.6"
+ndarray-ndimage = "0.4.0"
+convolutions-rs = "0.3.4"
+
+[profile.release-lto]
+inherits = "release"
+opt-level = 3
+overflow-checks = false
+lto = true
