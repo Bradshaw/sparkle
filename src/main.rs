@@ -75,7 +75,7 @@ impl KdPoint for Particle {
     }
 }
 
-const SUBSTRATE_RESOLUTION: usize = 96;
+const SUBSTRATE_RESOLUTION: usize = 64;
 struct State {
     particles: Vec<Particle>,
     counts: Vec<usize>,

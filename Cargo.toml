@@ -15,7 +15,6 @@ palette = "0.6.1"
 statistical = "1.0.0"
 ndarray = "0.15.6"
 ndarray-ndimage = "0.4.0"
-convolutions-rs = "0.3.4"
 
 [profile.release-lto]
 inherits = "release"
