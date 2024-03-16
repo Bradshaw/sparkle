@@ -8,13 +8,14 @@ edition = "2021"
 [dependencies]
 rayon = "1.7.0"
 ggez = "0.9.0-rc0"
-rand = "0.8.5"
+rand = { version = "0.8.5", features = ["small_rng"] }
 kd-tree = { version = "0.5.3", features = ["rayon"] }
 typenum = "1.16.0"
-palette = "0.6.1"
+palette = "0.7.5"
 statistical = "1.0.0"
 ndarray = "0.15.6"
 ndarray-ndimage = "0.4.0"
+clap = { version = "4.5.3", features = ["derive"] }
 
 [profile.release-lto]
 inherits = "release"
