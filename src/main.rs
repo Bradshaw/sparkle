@@ -160,7 +160,7 @@ struct Particle {
     fear: f32,
     id: usize,
     family: usize,
-    lines: Vec<Vec2>,
+    lines: Vec<(Vec2, Vec2)>,
 }
 
 impl PartialEq for Particle {
@@ -243,7 +243,11 @@ fn bilerp(x1y1: f32, x2y1: f32, x1y2: f32, x2y2: f32, tx: f32, ty: f32) -> f32 {
 fn smoothstep(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     //x*x*(3.0-2.0*x)
-    x * x * x * (x * (6.0 * x - 15.0) + 10.0)
+    (x * x * x * (x * (6.0 * x - 15.0) + 10.0)).clamp(0.0, 1.0)
+}
+
+fn smoothtable(x: f32, rise: f32, fall: f32) -> f32 {
+    smoothstep((x*rise).clamp(0.0, 1.0)*(fall-x*fall).clamp(0.0, 1.0))
 }
 
 impl Particle {
@@ -325,16 +329,15 @@ impl Particle {
             ConnectingLines::Family => particles
                 .par_iter()
                 .filter(|p| p.id != self.id)
-                .map(|p| (p.position, &state.families[p.family]))
-                .filter(|p| p.1.id == family.id)
-                .filter_map(|p| if (p.0 - self.position).length_squared()<(connect_length*connect_length) {Some(p.0)} else {None})
+                .map(|p| (p.position, p.velocity, &state.families[p.family]))
+                .filter(|p| p.2.id == family.id)
+                .filter_map(|p| if (p.0 - self.position).length_squared()<(connect_length*connect_length) {Some((p.0, p.1))} else {None})
                 .collect(),
             ConnectingLines::All => particles
                 .par_iter()
                 .filter(|p| p.id != self.id)
-                .filter(|p| p.id != self.id)
-                .map(|p| (p.position, &state.families[p.family]))
-                .filter_map(|p| if (p.0 - self.position).length_squared()<(connect_length*connect_length) {Some(p.0)} else {None})
+                .map(|p| (p.position, p.velocity, &state.families[p.family]))
+                .filter_map(|p| if (p.0 - self.position).length_squared()<(connect_length*connect_length) {Some((p.0, p.1))} else {None})
                 .collect(),
         };
 
@@ -664,15 +667,15 @@ impl event::EventHandler<GameError> for State {
 
             self.particles.iter().for_each(|particle|{
                 let i = get_substrate_index(particle.position);
-                self.substrate[i]+=if particle.threat>0.0 {particle.threat*dt*80.0} else {particle.threat*dt*5.0};// + particle.fear*dt;
+                self.substrate[i]+=if particle.threat>0.0 {particle.threat*dt*120.0} else {particle.threat*dt};// + particle.fear*dt;
             });
 
-            let blurred = gaussian_filter(&self.substrate, dt*10.0, 0, BorderMode::Reflect, 3);
+            let blurred = gaussian_filter(&self.substrate, dt*15.0, 0, BorderMode::Reflect, 3);
             self.substrate = blurred;
             for i in 0..SUBSTRATE_RESOLUTION {
                 for j in 0..SUBSTRATE_RESOLUTION {
                     let s = self.substrate[(i,j)];
-                    self.substrate[(i,j)] = (s-(s-1.0).max(0.0)*0.15*dt*0.0).max(0.0).min(3.0);
+                    self.substrate[(i,j)] = (s-(s-1.0).max(0.0)*0.1*dt*0.0).max(0.0).min(4.0);
                 }
             }
         }
@@ -697,8 +700,6 @@ impl event::EventHandler<GameError> for State {
         Ok(())
     }
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        let hot = LinSrgb::new(1.0, 0.5, 0.0);
-        let cold = LinSrgb::new(0.0, 1.0, 0.5);
         let mut canvas = match self.args.transparent {
             ExplicitBoolean::Yes => {
                 let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from([0.0, 0.0, 0.0, 0.0]));
@@ -737,11 +738,15 @@ impl event::EventHandler<GameError> for State {
             let threat = particle.threat * 0.5 + 0.5;
             let activity = threat.max(particle.fear);
             let life = ((velocity.length()-1.0)*0.1).max(0.0).powi(2).clamp(0.0, 1.0);
-            let sparkle = ((ctx.time.time_since_start().as_secs_f32() * 5.0)
+            let flicker = ((ctx.time.time_since_start().as_secs_f32() * 5.0)
                 + (particle.id as f32 % TAU))
                 .sin();
-            let sparkle = particle.fear * (1.0 - particle.threat).clamp(0.0, 1.0) * sparkle;
+            let sparkle = particle.fear * (1.0 - particle.threat).clamp(0.0, 1.0) * flicker;
             let sparkle = sparkle.clamp(0.0, 1.0).powf(2.0);
+
+            let hot = LinSrgb::new(1.0, 0.5*flicker, 0.0);
+            let cold = LinSrgb::new(0.0, 0.5*flicker, 1.0);
+
             let l = activity;
 
             let family_color = (family.color.r, family.color.g, family.color.b);
@@ -774,14 +779,14 @@ impl event::EventHandler<GameError> for State {
                 lerp(family_color.r, color.0, l),
                 lerp(family_color.g, color.1, l),
                 lerp(family_color.b, color.2, l),
-                //lerp(0.01, 1.0, life.max(l)),
                 lerp(0.01, 1.0, life.max(l)),
+                //lerp(0.0, 1.0, smoothstep(life.max(l).max(0.1))),
             ));
             //let scale = lerp(l.max(1.0-life), l.max(sparkle), sub_val);
             let scale = 1.0-life;
             let scale = scale*scale;
             //let scale = smoothstep(scale);
-            let scale = lerp(0.02,0.06,scale);
+            let scale = lerp(0.03,0.06,scale);
             self.blob_instance_array.push(
                 DrawParam::new()
                     .offset(Vec2::new(256.0, 256.0))
@@ -796,32 +801,39 @@ impl event::EventHandler<GameError> for State {
                     //.scale(Vec2::new(lerp(0.03,0.06,1.0-life), lerp(0.03,0.06,1.0-life))),
                     //.scale(Vec2::new(lerp(0.03,0.06,sub_val), lerp(0.03,0.06,sub_val))),
             );
-            for line in &particle.lines {
+            for (line, vel) in &particle.lines {
                 //let scale = 0.1;
-                let line = Vec2 { x: line.x, y: line.y };
+                let line = *line;
+                // let line = Vec2 {
+                //     x: line.x + vel.x*self.overflow.min(self.timestep),
+                //     y: line.y + vel.y*self.overflow.min(self.timestep),
+                // };
                 let pos = Vec2 {
                     x: particle.position.x + velocity.x*self.overflow.min(self.timestep),
                     y: particle.position.y + velocity.y*self.overflow.min(self.timestep),
                 };
-                let dist = ((pos-line).length())/self.args.connecting_line_length;
-                let alpha = 1.0-dist;
+                let diff = pos-line;
+                let dist = (diff).length();
+                if dist >= self.args.connecting_line_length { continue; }
+                let alpha = 1.0-(dist/self.args.connecting_line_length);
+                let alpha = alpha*alpha;
+                let alpha = smoothtable(alpha,2.0,2.0);
                 let alpha = smoothstep(alpha);
-                //let alpha = alpha*alpha;
                 //if alpha<0.2 || dist<0.1 { continue; }
                 let mut color = color.clone();
-                let alpha = alpha * color.a;
-                if alpha<0.2 { continue; }
-                let angle = Vec2::angle_between(Vec2::new(0.0, 1.0), pos-line);
-                color.a = alpha * 0.5;
+                let alpha = alpha * color.a * 0.25;
+                if alpha<0.1 { continue; }
+                let angle = Vec2::angle_between(Vec2::new(0.0, 1.0), diff.normalize());
+                color.a = alpha;
                 //let pos = pos+(line*(1.0/3.0));
                 self.line_instance_array.push(
                     DrawParam::new()
-                        .offset(Vec2::new(67.5, 234.5*2.0))
+                        .offset(Vec2::new(67.5, 469.0))
                         .dest(pos)
                         .color(color)
                         .rotation(angle)
                         //.scale(Vec2::new(0.03, 0.03)),
-                        .scale(Vec2::new( scale, dist/25.0)),
+                        .scale(Vec2::new( scale, (dist*2.0)/469.0)),
                         //.scale(Vec2::new(lerp(0.03,0.06,1.0-life), lerp(0.03,0.06,1.0-life))),
                         //.scale(Vec2::new(lerp(0.03,0.06,sub_val), lerp(0.03,0.06,sub_val))),
                 );
