@@ -7,14 +7,6 @@ pub(crate) fn inflect(x: f32, curve: f32) -> f32 {
     a + b
 }
 
-pub(crate) fn get_downsample_position(position: Vec2, resolution: (usize, usize)) -> Vec2 {
-    (
-        (position.x / 768.0) * resolution.0 as f32,
-        (position.y / 768.0) * resolution.1 as f32,
-    )
-        .into()
-}
-
 pub(crate) fn bilerp(x1y1: f32, x2y1: f32, x1y2: f32, x2y2: f32, tx: f32, ty: f32) -> f32 {
     lerp(lerp(x1y1, x2y1, tx), lerp(x1y2, x2y2, tx), ty)
 }
@@ -39,8 +31,4 @@ pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
 
 pub(crate) fn lerp(a: f32, b: f32, n: f32) -> f32 {
     b * n + a * (1.0 - n)
-}
-
-pub(crate) fn lerp_tuple(a: (f32, f32), b: (f32, f32), n: f32) -> (f32, f32) {
-    (lerp(a.0, b.0, n), lerp(a.1, b.1, n))
 }

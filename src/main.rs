@@ -7,7 +7,7 @@ use ggez::*;
 use kd_tree::KdTree;
 use ndarray::Array;
 use palette::rgb::Rgb;
-use palette::{FromColor, Hsl, Hsv, LinSrgb, Mix};
+use palette::{alpha, FromColor, Hsl, Hsv, LinSrgb, Mix};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
@@ -18,6 +18,8 @@ use clap::Parser;
 use ndarray_ndimage::*;
 use std::f32::consts::TAU;
 use std::{env, path};
+
+use crate::family::{PhasedReaction, Reaction};
 
 mod settings;
 mod substrate;
@@ -102,18 +104,6 @@ impl State {
         let min_inflect = 5.0;
         let inflect_mult = 10.0;
 
-        fn new_reaction(
-            min_attact: f32,
-            attract_mult: f32,
-            force: f32,
-            rng: &mut SmallRng,
-        ) -> (f32, f32) {
-            (
-                min_attact + rng.gen::<f32>() * attract_mult,
-                rng.gen::<f32>().abs().powf(0.3) * (-1.0 + rng.gen::<f32>() * 2.0).signum() * force,
-            )
-        }
-
         for i in 0..family_count {
             let color = Rgb::from_color(Hsv::<f32>::new(
                 (i as f32 / family_count as f32) * 360.0 + h_offset,
@@ -137,17 +127,17 @@ impl State {
                 reaction_phase: rng.gen::<f32>() * TAU,
                 reactions_cold: (0..family_count)
                     .map(|_| {
-                        (
-                            new_reaction(min_attact, attract_mult, force, rng),
-                            new_reaction(min_attact, attract_mult, force, rng),
+                        PhasedReaction(
+                            Reaction::random_reaction(min_attact, attract_mult, force, rng),
+                            Reaction::random_reaction(min_attact, attract_mult, force, rng),
                         )
                     })
                     .collect(),
                 reactions_hot: (0..family_count)
                     .map(|_| {
-                        (
-                            new_reaction(min_attact, attract_mult, force, rng),
-                            new_reaction(min_attact, attract_mult, force, rng),
+                        PhasedReaction(
+                            Reaction::random_reaction(min_attact, attract_mult, force, rng),
+                            Reaction::random_reaction(min_attact, attract_mult, force, rng),
                         )
                     })
                     .collect(),
@@ -167,18 +157,6 @@ impl State {
         let attract_mult = 10.0;
         let force = 50.0;
 
-        fn new_reaction(
-            min_attact: f32,
-            attract_mult: f32,
-            force: f32,
-            rng: &mut SmallRng,
-        ) -> (f32, f32) {
-            (
-                min_attact + rng.gen::<f32>() * attract_mult,
-                rng.gen::<f32>().abs().powf(0.3) * (-1.0 + rng.gen::<f32>() * 2.0).signum() * force,
-            )
-        }
-
         for i in 0..self.families.len() {
             let f = &self.families[i];
             self.families[i] = family::Family {
@@ -196,17 +174,17 @@ impl State {
                 reaction_phase: rng.gen::<f32>() * TAU,
                 reactions_cold: (0..family_count)
                     .map(|_| {
-                        (
-                            new_reaction(min_attact, attract_mult, force, rng),
-                            new_reaction(min_attact, attract_mult, force, rng),
+                        PhasedReaction(
+                            Reaction::random_reaction(min_attact, attract_mult, force, rng),
+                            Reaction::random_reaction(min_attact, attract_mult, force, rng),
                         )
                     })
                     .collect(),
                 reactions_hot: (0..family_count)
                     .map(|_| {
-                        (
-                            new_reaction(min_attact, attract_mult, force, rng),
-                            new_reaction(min_attact, attract_mult, force, rng),
+                        PhasedReaction(
+                            Reaction::random_reaction(min_attact, attract_mult, force, rng),
+                            Reaction::random_reaction(min_attact, attract_mult, force, rng),
                         )
                     })
                     .collect(),
@@ -218,7 +196,7 @@ impl State {
     }
 
     fn intialize_particles(&mut self) {
-        let normal = Normal::new(768.0*0.5, 120.0).unwrap();
+        let normal = Normal::new(768.0 * 0.5, 120.0).unwrap();
         let mut particles: Vec<particle::Particle> = vec![];
         let rng = &mut self.rng;
         let p_count = self.args.particle_count;
@@ -230,10 +208,7 @@ impl State {
             let y = normal.sample(rng);
 
             particles.push(particle::Particle {
-                position: Vec2 {
-                    x,
-                    y,
-                },
+                position: Vec2 { x, y },
                 id: rng.gen(),
                 velocity: Vec2 { x: 0.0, y: 0.0 },
                 threat: -1.0,
@@ -456,13 +431,13 @@ impl event::EventHandler<GameError> for State {
                 //.scale(Vec2::new(lerp(0.03,0.06,1.0-life), lerp(0.03,0.06,1.0-life))),
                 //.scale(Vec2::new(lerp(0.03,0.06,sub_val), lerp(0.03,0.06,sub_val))),
             );
-            for (line, _vel) in &particle.lines {
+            for (line, vel) in &particle.lines {
                 //let scale = 0.1;
                 let line = *line;
-                // let line = Vec2 {
-                //     x: line.x + vel.x*self.overflow.min(self.timestep),
-                //     y: line.y + vel.y*self.overflow.min(self.timestep),
-                // };
+                let line = Vec2 {
+                    x: line.x + vel.x * self.overflow.min(self.timestep),
+                    y: line.y + vel.y * self.overflow.min(self.timestep),
+                };
                 let pos = Vec2 {
                     x: particle.position.x + velocity.x * self.overflow.min(self.timestep),
                     y: particle.position.y + velocity.y * self.overflow.min(self.timestep),
@@ -473,18 +448,18 @@ impl event::EventHandler<GameError> for State {
                     continue;
                 }
                 let alpha = 1.0 - (dist / self.args.connecting_line_length);
-                let alpha = alpha * alpha;
-                let alpha = useful::smoothtable(alpha, 2.0, 2.0);
-                let alpha = useful::smoothstep(alpha);
+                let alpha = alpha.clamp(0.0, 1.0);
+                let alpha = alpha * alpha * alpha;
+                //let alpha = useful::smoothtable(alpha, 2.0, 2.0);
+                //let alpha = useful::smoothstep(alpha);
                 //if alpha<0.2 || dist<0.1 { continue; }
                 let mut color = color.clone();
                 let alpha = alpha * color.a * 0.25;
-                if alpha < 0.1 {
+                if alpha < 0.01 {
                     continue;
                 }
                 let angle = Vec2::angle_between(Vec2::new(0.0, 1.0), diff.normalize());
                 color.a = alpha;
-                //let pos = pos+(line*(1.0/3.0));
                 self.line_instance_array.push(
                     DrawParam::new()
                         .offset(Vec2::new(67.5, 469.0))
@@ -498,8 +473,6 @@ impl event::EventHandler<GameError> for State {
                 );
             }
         }
-
-        
 
         canvas.draw(&self.blob_instance_array, DrawParam::default());
         canvas.draw(&self.line_instance_array, DrawParam::default());

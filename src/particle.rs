@@ -20,14 +20,6 @@ pub(crate) struct Particle {
     pub(crate) lines: Vec<(Vec2, Vec2)>,
 }
 
-impl PartialEq for Particle {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for Particle {}
-
 impl KdPoint for Particle {
     type Scalar = f32;
     type Dim = typenum::U2;
@@ -51,13 +43,8 @@ impl Particle {
     ) -> (Particle, usize) {
         let family = &state.families[self.family];
         let max_distance = family.repel_range + 2.0 * family.max_attraction;
-        //let max_distance = self.family.max_attraction;
-        let particles = tree.within_radius(&[self.position.x, self.position.y], max_distance);
 
-        // let push = tree.nearests(
-        //     &[self.position.x, self.position.y],
-        //     200,
-        // );
+        let particles = tree.within_radius(&[self.position.x, self.position.y], max_distance);
 
         let count = AtomicUsize::new(0);
         let heat = useful::smoothstep(substrate::sample_substrate(self.position, &state.substrate));
@@ -72,18 +59,14 @@ impl Particle {
                 count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let diff = p.position - self.position;
                 let dist = diff.length();
-                let reactions_hot = family.reactions_hot[p_family.id];
-                let reactions_cold = family.reactions_cold[p_family.id];
-                let reaction_hot =
-                    useful::lerp_tuple(reactions_hot.0, reactions_hot.1, reaction_phase);
-                let reaction_cold =
-                    useful::lerp_tuple(reactions_cold.0, reactions_cold.1, reaction_phase);
-                let reaction = useful::lerp_tuple(reaction_cold, reaction_hot, heat);
+                let reaction_hot = family.reactions_hot[p_family.id].sample(reaction_phase);
+                let reaction_cold = family.reactions_cold[p_family.id].sample(reaction_phase);
+                let reaction = reaction_cold.lerp(reaction_hot, heat);
                 let repel_range = family.repel_range;
                 let repel_force = family.repel_force + 2.0 * self.fear * family.repel_force;
-                let reaction_range = reaction.0;
+                let reaction_range = reaction.range;
                 let reaction_force =
-                    useful::lerp(reaction.1, -1.0 * reaction.1.abs(), self.fear.powf(4.0));
+                    useful::lerp(reaction.force, -1.0 * reaction.force.abs(), self.fear.powf(4.0));
                 let mult = if dist < family.repel_range {
                     (
                         (dist * repel_force) / repel_range - repel_force,
